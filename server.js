@@ -1,24 +1,18 @@
 const express = require('express');
 const axios = require('axios');
-const waifu2x = require('waifu2x').default;
+const waifu2x = require("waifu2x").default;
 const fs = require('fs');
 const path = require('path');
 
+
 const app = express();
-const port = 3001;
-
-const tempDir = path.join(__dirname, 'temp');
-if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir);
-}
-
-console.log('waifu2x functions:', Object.keys(waifu2x));
+const port = process.env.PORT || 3001;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     next();
@@ -27,31 +21,35 @@ app.use((req, res, next) => {
 app.post('/upscale', async (req, res) => {
     try {
         const { imageUrl } = req.body;
+        if (!imageUrl) {
+            return res.status(400).json({ error: 'Image URL is missing in the request body.' });
+        }
+
         console.log('Received Image URL:', imageUrl);
 
-        const imageBuffer = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-        console.log('Received Image Buffer:', imageBuffer);
-
-
-        const tempImagePath = path.join(tempDir, `image_${Date.now()}.png`);
-        fs.writeFileSync(tempImagePath, Buffer.from(imageBuffer.data));
-
+        const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        const imageBuffer = Buffer.from(imageResponse.data);
 
         const waifu2xOptions = {
-            scale: 4, // Change the scale factor as needed (2, 4, etc.)
-            noise: 3, // Change the noise level as needed (0, 1, 2, 3)
+            noise: 3,
+            scale: 4,
             upscaler: "real-esrgan"
         };
 
+        console.log('Before upscaling');
+
+        const tempImagePath = path.join(__dirname, 'temp', `image_${Date.now()}.png`);
+        fs.writeFileSync(tempImagePath, imageBuffer);
+
         await waifu2x.upscaleImage(tempImagePath, tempImagePath, waifu2xOptions);
 
+        console.log('Image upscaling completed successfully');
 
         const upscaledImageData = fs.readFileSync(tempImagePath);
-        const base64Image = Buffer.from(upscaledImageData).toString('base64');
-        const upscaledImageUrl = `data:image/png;base64,${base64Image}`;
-
-
         fs.unlinkSync(tempImagePath);
+
+        const base64Image = upscaledImageData.toString('base64');
+        const upscaledImageUrl = `data:image/png;base64,${base64Image}`;
 
         res.json({ upscaledImageUrl });
     } catch (error) {
